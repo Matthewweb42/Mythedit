@@ -37,11 +37,16 @@ const chaptersRoute: FastifyPluginAsync = async (fastify) => {
 
       // Parse file content based on type
       let content = '';
-      const filename = data.filename;
+      const filename = data.filename.toLowerCase();
       const mimeType = data.mimetype;
 
-      if (mimeType === 'text/plain' || filename.endsWith('.txt')) {
-        // Plain text file
+      if (
+        mimeType === 'text/plain' ||
+        filename.endsWith('.txt') ||
+        filename.endsWith('.md') ||
+        filename.endsWith('.rtf')
+      ) {
+        // Plain text file (txt, md, rtf treated as plain text for now)
         const buffer = await data.toBuffer();
         content = buffer.toString('utf-8');
       } else if (
@@ -53,9 +58,14 @@ const chaptersRoute: FastifyPluginAsync = async (fastify) => {
         const buffer = await data.toBuffer();
         const result = await mammoth.extractRawText({ buffer });
         content = result.value;
+      } else if (filename.endsWith('.scriv')) {
+        // Scrivener files are actually RTF - treat as plain text
+        const buffer = await data.toBuffer();
+        content = buffer.toString('utf-8');
       } else {
         return reply.code(400).send({
-          error: 'Unsupported file type. Please upload .txt or .docx files.',
+          error:
+            'Unsupported file type. Please upload .txt, .docx, .scriv, .rtf, or .md files.',
         });
       }
 
@@ -70,7 +80,65 @@ const chaptersRoute: FastifyPluginAsync = async (fastify) => {
         .split(/\s+/)
         .filter((word) => word.length > 0).length;
 
+      // Ensure book exists (create if needed for demo)
+      console.log('Checking for book:', bookId);
+      let book = await prisma.book.findUnique({ where: { id: bookId } });
+
+      if (!book) {
+        console.log('Book not found, creating demo user, project and book...');
+        // For demo - auto-create user, book and project
+        const userId = 'demo-user-123';
+
+        // First ensure user exists
+        let user = await prisma.user.findUnique({ where: { id: userId } });
+
+        if (!user) {
+          console.log('Creating demo user:', userId);
+          user = await prisma.user.create({
+            data: {
+              id: userId,
+              email: 'demo@mythedit.com',
+              name: 'Demo User',
+            },
+          });
+          console.log('Created user:', user.id);
+        } else {
+          console.log('Found existing user:', user.id);
+        }
+
+        // Then check for project
+        let project = await prisma.project.findFirst({ where: { userId } });
+
+        if (!project) {
+          console.log('Creating demo project for user:', userId);
+          project = await prisma.project.create({
+            data: {
+              userId,
+              name: 'My Novel',
+              genre: 'Fiction',
+            },
+          });
+          console.log('Created project:', project.id);
+        } else {
+          console.log('Found existing project:', project.id);
+        }
+
+        console.log('Creating book with ID:', bookId);
+        book = await prisma.book.create({
+          data: {
+            id: bookId,
+            projectId: project.id,
+            number: 1,
+            title: 'Book 1',
+          },
+        });
+        console.log('Created book:', book.id);
+      } else {
+        console.log('Found existing book:', book.id);
+      }
+
       // Create chapter in database
+      console.log('Creating chapter for book:', bookId);
       const chapter = await prisma.chapter.create({
         data: {
           bookId,

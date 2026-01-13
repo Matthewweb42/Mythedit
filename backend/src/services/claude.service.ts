@@ -82,7 +82,7 @@ export class ClaudeService {
 
     try {
       const message = await anthropic.messages.create({
-        model: 'claude-haiku-4-20250122', // Use Haiku for summaries (10x cheaper)
+        model: 'claude-3-5-haiku-20241022', // Use Haiku 3.5 for summaries (10x cheaper)
         max_tokens: 2000,
         temperature: 0.3, // More consistent for summaries
         messages: [{ role: 'user', content: prompt }],
@@ -207,12 +207,12 @@ export class ClaudeService {
     usage: { input_tokens: number; output_tokens: number },
     isHaiku = false
   ): ApiUsage {
-    // Pricing (as of January 2026)
-    // Sonnet 4.5: $3/1M input, $15/1M output
-    // Haiku 4: $0.25/1M input, $1.25/1M output
+    // Pricing (as of January 2025)
+    // Sonnet 4: $3/1M input, $15/1M output
+    // Haiku 3.5: $1/1M input, $5/1M output
 
-    const inputCostPer1M = isHaiku ? 0.25 : 3.0;
-    const outputCostPer1M = isHaiku ? 1.25 : 15.0;
+    const inputCostPer1M = isHaiku ? 1.0 : 3.0;
+    const outputCostPer1M = isHaiku ? 5.0 : 15.0;
 
     const inputCost = (usage.input_tokens / 1_000_000) * inputCostPer1M;
     const outputCost = (usage.output_tokens / 1_000_000) * outputCostPer1M;

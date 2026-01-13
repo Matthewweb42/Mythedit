@@ -21,9 +21,21 @@ const server = Fastify({
 // Register plugins
 async function start() {
   try {
-    // CORS
+    // CORS - Allow all localhost ports in development
     await server.register(cors, {
-      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+      origin: (origin, cb) => {
+        // Allow all localhost origins in development
+        if (!origin || origin.match(/^http:\/\/localhost:\d+$/)) {
+          cb(null, true);
+          return;
+        }
+        // In production, use FRONTEND_URL from env
+        if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
+          cb(null, true);
+          return;
+        }
+        cb(new Error('Not allowed by CORS'), false);
+      },
       credentials: true,
     });
 
