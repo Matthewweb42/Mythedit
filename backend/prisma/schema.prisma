@@ -19,7 +19,9 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  projects  Project[]
+  projects      Project[]
+  subscription  Subscription?
+  usageRecords  UsageRecord[]
 }
 
 model Project {
@@ -71,6 +73,12 @@ model Chapter {
 
   version     Int           @default(1)
 
+  // Editing features
+  summary           ChapterSummary?
+  editingFeedback   EditingFeedback[]
+  entityMentions    EntityMention[]
+
+  // Worldbuilding features (future)
   conflicts   Conflict[]
 
   @@unique([bookId, number])
@@ -133,4 +141,161 @@ enum ConflictStatus {
   INTENTIONAL
   FIXED
   IGNORED
+}
+
+// ============================================
+// EDITING FEATURES (MVP)
+// ============================================
+
+model ChapterSummary {
+  id        String   @id @default(cuid())
+  chapterId String   @unique
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  summary   String   @db.Text  // AI-generated summary (500-1000 words)
+  keyPoints Json                // Array of key plot points
+  entities  Json                // Tagged entities: {characters: [], places: [], events: []}
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chapterId])
+}
+
+model EditingFeedback {
+  id        String       @id @default(cuid())
+  chapterId String
+  chapter   Chapter      @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  type      EditingType  // DEVELOPMENTAL, COPY, LINE, PROOFREAD
+
+  // Overall assessment
+  overallScore     Float?         // 0-10 rating
+  strengths        Json           // Array of strength descriptions
+  weaknesses       Json           // Array of weakness descriptions
+
+  // Detailed feedback
+  feedback         String @db.Text // Full feedback text (markdown)
+  inlineHighlights Json            // Array of {start, end, type, comment}
+
+  // Metadata
+  tokensUsed       Int?           // For cost tracking
+  processingTime   Int?           // Seconds
+
+  createdAt DateTime @default(now())
+
+  @@index([chapterId])
+  @@index([type])
+}
+
+enum EditingType {
+  DEVELOPMENTAL
+  COPY
+  LINE
+  PROOFREAD
+}
+
+model EntityMention {
+  id        String   @id @default(cuid())
+  chapterId String
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  entityType EntityType  // CHARACTER, PLACE, EVENT, OBJECT
+  entityName String      // "Alaric", "Ironhold", "Battle of Sorrows"
+
+  // For RAG - helps retrieve relevant chapters
+  mentions   Json        // Array of {paragraph: Int, context: String}
+
+  createdAt DateTime @default(now())
+
+  @@index([chapterId])
+  @@index([entityName])
+  @@index([entityType])
+}
+
+enum EntityType {
+  CHARACTER
+  PLACE
+  EVENT
+  OBJECT
+  FACTION
+  MAGIC_ITEM
+}
+
+// ============================================
+// USER SUBSCRIPTION & USAGE TRACKING
+// ============================================
+
+model Subscription {
+  id     String         @id @default(cuid())
+  userId String         @unique
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tier          SubscriptionTier @default(FREE)
+  status        SubscriptionStatus @default(ACTIVE)
+
+  // Limits
+  chaptersPerMonth Int @default(5)   // Resets monthly
+  wordsPerMonth    Int @default(20000)
+
+  // Current period usage
+  chaptersUsed     Int @default(0)
+  wordsUsed        Int @default(0)
+  periodStart      DateTime @default(now())
+  periodEnd        DateTime
+
+  // Billing
+  stripeCustomerId       String?
+  stripeSubscriptionId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tier])
+  @@index([status])
+}
+
+enum SubscriptionTier {
+  FREE
+  STANDARD
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+}
+
+model UsageRecord {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  chapterId String?  // Optional reference to chapter
+
+  // What was done
+  action       UsageAction
+  tokensUsed   Int?         // AI tokens consumed
+  wordsAnalyzed Int?        // Words in chapter
+  costUsd      Float?       // Actual cost in USD
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+enum UsageAction {
+  CHAPTER_UPLOAD
+  DEVELOPMENTAL_EDIT
+  COPY_EDIT
+  LINE_EDIT
+  PROOFREAD
+  SUMMARY_GENERATION
+  EMBEDDING_GENERATION
 }
