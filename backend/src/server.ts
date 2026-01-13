@@ -1,6 +1,9 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import 'dotenv/config';
+import projectsRoute from './routes/projects';
+import booksRoute from './routes/books';
+import chaptersRoute from './routes/chapters';
 
 const server = Fastify({
   logger: {
@@ -37,13 +40,18 @@ async function start() {
       };
     });
 
-    // API routes placeholder
+    // API routes
     server.get('/api/test', async (request, reply) => {
       return {
         message: 'MythEdit API is running!',
         version: '1.0.0',
       };
     });
+
+    // Register route modules
+    await server.register(projectsRoute, { prefix: '/api/projects' });
+    await server.register(booksRoute, { prefix: '/api/books' });
+    await server.register(chaptersRoute, { prefix: '/api/chapters' });
 
     const port = parseInt(process.env.PORT || '3000', 10);
     const host = '0.0.0.0';
