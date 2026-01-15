@@ -1,6 +1,8 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import 'dotenv/config';
+import authRoute from './routes/auth';
+import workspacesRoute from './routes/workspaces';
 import projectsRoute from './routes/projects';
 import booksRoute from './routes/books';
 import chaptersRoute from './routes/chapters';
@@ -61,6 +63,8 @@ async function start() {
     });
 
     // Register route modules
+    await server.register(authRoute, { prefix: '/api/auth' });
+    await server.register(workspacesRoute, { prefix: '/api/workspaces' });
     await server.register(projectsRoute, { prefix: '/api/projects' });
     await server.register(booksRoute, { prefix: '/api/books' });
     await server.register(chaptersRoute, { prefix: '/api/chapters' });

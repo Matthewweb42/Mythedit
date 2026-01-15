@@ -13,31 +13,67 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  name      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String?   // For email/password auth
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
+  workspaces    Workspace[]
   projects      Project[]
   subscription  Subscription?
   usageRecords  UsageRecord[]
 }
 
+// ============================================
+// WORKSPACE SYSTEM
+// ============================================
+
+model Workspace {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      WorkspaceType // FREE_EDIT (no context) or NOVEL (with context)
+  name      String        // "Practice Drafts", "The Shadowlands Trilogy"
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  // Novel workspaces contain Projects (books in series)
+  projects  Project[]
+
+  // Free Edit workspaces contain standalone chapters
+  chapters  Chapter[]
+
+  @@index([userId])
+  @@index([type])
+}
+
+enum WorkspaceType {
+  FREE_EDIT  // Standalone chapters, no continuity tracking
+  NOVEL      // Multi-book projects with RAG context
+}
+
 model Project {
-  id          String    @id @default(cuid())
+  id          String     @id @default(cuid())
   userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  workspaceId String?    // Belongs to a NOVEL workspace
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name        String
   description String?
-  genre       String    @default("fantasy")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  genre       String     @default("fantasy")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   books       Book[]
 
   @@index([userId])
+  @@index([workspaceId])
 }
 
 model Book {
@@ -58,8 +94,14 @@ model Book {
 
 model Chapter {
   id          String        @id @default(cuid())
-  bookId      String
-  book        Book          @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // For Novel workspace chapters (belongs to a Book)
+  bookId      String?
+  book        Book?         @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // For Free Edit workspace chapters (standalone, no book)
+  workspaceId String?
+  workspace   Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   number      Int
   title       String?
@@ -81,8 +123,8 @@ model Chapter {
   // Worldbuilding features (future)
   conflicts   Conflict[]
 
-  @@unique([bookId, number])
   @@index([bookId])
+  @@index([workspaceId])
   @@index([status])
 }
 

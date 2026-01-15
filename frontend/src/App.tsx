@@ -1,25 +1,31 @@
 import { useState, useEffect } from 'react';
 import { ChapterUpload } from './components/ChapterUpload';
-import { FeedbackDisplay } from './components/FeedbackDisplay';
+import { ChapterView } from './components/ChapterView';
+import { FeedbackSidebar } from './components/FeedbackSidebar';
 import { ProjectTree } from './components/ProjectTree';
+import { AuthPage } from './pages/AuthPage';
+import { useAuth } from './contexts/AuthContext';
 import type { Project, Chapter } from './types';
 
 function App() {
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // For demo purposes - in production this would come from auth
-  const demoUserId = 'demo-user-123';
   const demoBookId = 'demo-book-123';
 
   useEffect(() => {
-    loadProjects();
-  }, []);
+    if (isAuthenticated && user) {
+      loadProjects();
+    }
+  }, [isAuthenticated, user]);
 
   const loadProjects = async () => {
+    if (!user) return;
+
     try {
-      const response = await fetch(`http://localhost:3000/api/projects/user/${demoUserId}`);
+      const response = await fetch(`http://localhost:3000/api/projects/user/${user.id}`);
       if (response.ok) {
         const data = await response.json();
         setProjects(data);
@@ -50,6 +56,23 @@ function App() {
     handleSelectChapter(chapterId);
   };
 
+  // Show auth loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-indigo-900 to-purple-900">
+        <div className="text-center">
+          <div className="spinner w-16 h-16 mx-auto mb-4"></div>
+          <p className="text-gray-300">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth page if not authenticated
+  if (!isAuthenticated) {
+    return <AuthPage />;
+  }
+
   return (
     <div className="flex h-screen bg-[#0a0e1a] overflow-hidden">
       {/* Sidebar */}
@@ -71,11 +94,23 @@ function App() {
               <p className="text-sm text-gray-400">AI Developmental Editor for Fiction Writers</p>
             </div>
             <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse-glow"></div>
-                <span className="text-sm text-gray-400">
-                  Backend: <span className="text-emerald-400 font-medium">Connected</span>
-                </span>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse-glow"></div>
+                  <span className="text-sm text-gray-400">
+                    Backend: <span className="text-emerald-400 font-medium">Connected</span>
+                  </span>
+                </div>
+                <div className="h-4 w-px bg-gray-700"></div>
+                <div className="text-sm text-gray-400">
+                  {user?.name || user?.email}
+                </div>
+                <button
+                  onClick={logout}
+                  className="text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                >
+                  Logout
+                </button>
               </div>
             </div>
           </div>
@@ -91,50 +126,54 @@ function App() {
               </div>
             </div>
           ) : selectedChapter ? (
-            // Show feedback if chapter has been analyzed
-            selectedChapter.editingFeedback && selectedChapter.editingFeedback.length > 0 ? (
-              <div className="animate-fadeIn">
-                <FeedbackDisplay
-                  feedback={selectedChapter.editingFeedback[0]}
-                  chapterContent={selectedChapter.content}
+            // Two-panel layout: Chapter text (left) + Feedback sidebar (right)
+            <div className="flex gap-4 h-full animate-fadeIn">
+              {/* Left Panel: Chapter Text (60%) */}
+              <div className="w-[60%]">
+                <ChapterView chapter={selectedChapter} />
+              </div>
+
+              {/* Right Panel: Feedback Sidebar (40%) */}
+              <div className="w-[40%]">
+                <FeedbackSidebar
+                  feedback={selectedChapter.editingFeedback?.[0] || null}
+                  isAnalyzing={selectedChapter.status === 'ANALYZING'}
+                  onRequestAnalysis={async (depth) => {
+                    if (!selectedChapter) return;
+
+                    try {
+                      const response = await fetch(`http://localhost:3000/api/chapters/${selectedChapter.id}/analyze`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ depth }),
+                      });
+
+                      if (response.ok) {
+                        // Update chapter status locally
+                        setSelectedChapter({
+                          ...selectedChapter,
+                          status: 'ANALYZING',
+                        });
+
+                        // Poll for completion
+                        const pollInterval = setInterval(async () => {
+                          const chapterResponse = await fetch(`http://localhost:3000/api/chapters/${selectedChapter.id}`);
+                          if (chapterResponse.ok) {
+                            const updatedChapter = await chapterResponse.json();
+                            if (updatedChapter.status === 'COMPLETED' || updatedChapter.status === 'FAILED') {
+                              setSelectedChapter(updatedChapter);
+                              clearInterval(pollInterval);
+                            }
+                          }
+                        }, 2000);
+                      }
+                    } catch (error) {
+                      console.error('Failed to start analysis:', error);
+                    }
+                  }}
                 />
               </div>
-            ) : (
-              <div className="max-w-2xl mx-auto text-center py-16 animate-fadeIn">
-                <div className="glass-card p-12">
-                  <svg
-                    className="mx-auto h-20 w-20 text-indigo-500 mb-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                  <h3 className="text-2xl font-semibold text-gray-100 mb-3">Chapter Selected</h3>
-                  <p className="text-lg text-indigo-400 mb-2">{selectedChapter.title || `Chapter ${selectedChapter.number}`}</p>
-                  <div className="flex items-center justify-center space-x-4 text-sm text-gray-400 mb-6">
-                    <span className="badge-info">{selectedChapter.wordCount} words</span>
-                    <span className="badge-warning">Status: {selectedChapter.status}</span>
-                  </div>
-                  {selectedChapter.status === 'ANALYZING' && (
-                    <div className="flex items-center justify-center space-x-3">
-                      <div className="spinner w-5 h-5"></div>
-                      <p className="text-indigo-400 animate-pulse">Analysis in progress...</p>
-                    </div>
-                  )}
-                  {selectedChapter.status === 'FAILED' && (
-                    <div className="badge-error p-4">
-                      <p className="font-medium">Analysis failed: {selectedChapter.error}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
+            </div>
           ) : (
             // Show upload interface
             <div className="animate-fadeIn">

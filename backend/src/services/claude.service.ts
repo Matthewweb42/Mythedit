@@ -28,7 +28,7 @@ export class ClaudeService {
 
     try {
       const message = await anthropic.messages.create({
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
         max_tokens: parseInt(process.env.CLAUDE_MAX_TOKENS || '4000'),
         temperature: 0.7, // Slightly creative but consistent
         messages: [
@@ -80,13 +80,21 @@ export class ClaudeService {
     const prompt = buildSummaryPrompt(chapterText, chapterNumber, genre);
     const startTime = Date.now();
 
+    console.log('🔍 Attempting to generate summary with model...');
+
     try {
+      // Use the same model as developmental editing for now
+      const modelToUse = process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929';
+      console.log('📋 Using model for summary:', modelToUse);
+
       const message = await anthropic.messages.create({
-        model: 'claude-3-5-haiku-20241022', // Use Haiku 3.5 for summaries (10x cheaper)
+        model: modelToUse,
         max_tokens: 2000,
         temperature: 0.3, // More consistent for summaries
         messages: [{ role: 'user', content: prompt }],
       });
+
+      console.log('✅ Summary API call succeeded');
 
       const processingTime = Math.round((Date.now() - startTime) / 1000);
 

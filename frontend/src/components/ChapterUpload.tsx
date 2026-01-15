@@ -63,15 +63,16 @@ export function ChapterUpload({ bookId, chapterNumber, onUploadComplete }: Chapt
 
       const data = await response.json();
 
+      // Upload complete - show chapter immediately (no auto-analysis)
       setUploadProgress({
-        status: 'processing',
-        progress: 50,
-        message: 'Processing chapter...',
+        status: 'completed',
+        progress: 100,
+        message: 'Chapter uploaded! Choose an analysis depth to begin.',
         chapterId: data.chapter.id,
       });
 
-      // Poll for analysis completion
-      pollChapterStatus(data.chapter.id);
+      // Call completion callback immediately
+      onUploadComplete(data.chapter.id);
     } catch (error) {
       setUploadProgress({
         status: 'error',
@@ -81,60 +82,6 @@ export function ChapterUpload({ bookId, chapterNumber, onUploadComplete }: Chapt
     }
   };
 
-  const pollChapterStatus = async (chapterId: string) => {
-    const maxAttempts = 60; // 60 attempts = 2 minutes max
-    let attempts = 0;
-
-    const poll = setInterval(async () => {
-      try {
-        const response = await fetch(`http://localhost:3000/api/chapters/${chapterId}`);
-        const chapter = await response.json();
-
-        attempts++;
-
-        if (chapter.status === 'ANALYZING') {
-          setUploadProgress({
-            status: 'analyzing',
-            progress: 70 + (attempts * 0.5),
-            message: 'AI is analyzing your chapter...',
-            chapterId,
-          });
-        } else if (chapter.status === 'COMPLETED') {
-          clearInterval(poll);
-          setUploadProgress({
-            status: 'completed',
-            progress: 100,
-            message: 'Analysis complete!',
-            chapterId,
-          });
-          onUploadComplete(chapterId);
-        } else if (chapter.status === 'FAILED') {
-          clearInterval(poll);
-          setUploadProgress({
-            status: 'error',
-            progress: 0,
-            message: chapter.error || 'Analysis failed',
-          });
-        }
-
-        if (attempts >= maxAttempts) {
-          clearInterval(poll);
-          setUploadProgress({
-            status: 'error',
-            progress: 0,
-            message: 'Analysis timeout - please try again',
-          });
-        }
-      } catch (error) {
-        clearInterval(poll);
-        setUploadProgress({
-          status: 'error',
-          progress: 0,
-          message: 'Failed to check status',
-        });
-      }
-    }, 2000); // Poll every 2 seconds
-  };
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {

@@ -137,24 +137,27 @@ const chaptersRoute: FastifyPluginAsync = async (fastify) => {
         console.log('Found existing book:', book.id);
       }
 
-      // Create chapter in database
-      console.log('Creating chapter for book:', bookId);
+      // Determine next chapter number
+      const lastChapter = await prisma.chapter.findFirst({
+        where: { bookId },
+        orderBy: { number: 'desc' },
+      });
+      const nextChapterNumber = lastChapter ? lastChapter.number + 1 : 1;
+
+      // Create chapter in database (PENDING status - user chooses when to analyze)
+      console.log('Creating chapter for book:', bookId, 'Number:', nextChapterNumber);
       const chapter = await prisma.chapter.create({
         data: {
           bookId,
-          number: chapterNumber,
-          title: chapterTitle || `Chapter ${chapterNumber}`,
+          number: nextChapterNumber,
+          title: chapterTitle || `Chapter ${nextChapterNumber}`,
           content,
           wordCount,
-          status: ChapterStatus.PROCESSING,
+          status: ChapterStatus.PENDING, // Don't auto-analyze - user triggers it
         },
       });
 
-      // Start analysis asynchronously (don't wait for it)
-      analyzeChapterAsync(chapter.id, content, bookId).catch((error) => {
-        console.error(`Failed to analyze chapter ${chapter.id}:`, error);
-      });
-
+      // Return immediately - user will trigger analysis via UI button
       return reply.code(201).send({
         message: 'Chapter uploaded successfully',
         chapter: {
@@ -236,6 +239,48 @@ const chaptersRoute: FastifyPluginAsync = async (fastify) => {
   });
 
   /**
+   * Trigger analysis for a chapter
+   * POST /api/chapters/:id/analyze
+   */
+  fastify.post('/:id/analyze', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { depth?: 'quick' | 'balanced' | 'deep'; modes?: string[] };
+
+    try {
+      // Get the chapter
+      const chapter = await prisma.chapter.findUnique({
+        where: { id },
+        include: { book: true },
+      });
+
+      if (!chapter) {
+        return reply.code(404).send({ error: 'Chapter not found' });
+      }
+
+      // Start analysis asynchronously
+      const depth = body.depth || 'balanced';
+      analyzeChapterAsync(chapter.id, chapter.content, chapter.bookId!, depth).catch((error) => {
+        console.error(`Failed to analyze chapter ${chapter.id}:`, error);
+      });
+
+      // Update status to ANALYZING
+      await prisma.chapter.update({
+        where: { id },
+        data: { status: ChapterStatus.ANALYZING },
+      });
+
+      return reply.send({
+        message: 'Analysis started',
+        depth,
+        chapterId: id,
+      });
+    } catch (error) {
+      console.error('Analyze chapter error:', error);
+      return reply.code(500).send({ error: 'Failed to start analysis' });
+    }
+  });
+
+  /**
    * Delete a chapter
    * DELETE /api/chapters/:id
    */
@@ -257,12 +302,13 @@ const chaptersRoute: FastifyPluginAsync = async (fastify) => {
 
 /**
  * Analyze chapter asynchronously
- * This runs in the background after upload
+ * This runs when user clicks analyze button
  */
 async function analyzeChapterAsync(
   chapterId: string,
   content: string,
-  bookId: string
+  bookId: string,
+  depth: 'quick' | 'balanced' | 'deep' = 'balanced'
 ) {
   try {
     // Update status to analyzing
@@ -328,23 +374,27 @@ async function analyzeChapterAsync(
       },
     });
 
+    // TODO: Re-enable summary generation once we have the correct model
+    console.log('⏭️  Skipping summary generation for now');
+    const summaryUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
+
     // Generate summary for future context (use Haiku - cheaper)
-    const { summary: summaryData, usage: summaryUsage } =
-      await claudeService.generateSummary(
-        content,
-        currentChapter?.number || 1,
-        book.project.genre
-      );
+    // const { summary: summaryData, usage: summaryUsage } =
+    //   await claudeService.generateSummary(
+    //     content,
+    //     currentChapter?.number || 1,
+    //     book.project.genre
+    //   );
 
     // Store summary
-    await prisma.chapterSummary.create({
-      data: {
-        chapterId,
-        summary: summaryData.summary,
-        keyPoints: summaryData.keyPoints,
-        entities: summaryData.entities,
-      },
-    });
+    // await prisma.chapterSummary.create({
+    //   data: {
+    //     chapterId,
+    //     summary: summaryData.summary,
+    //     keyPoints: summaryData.keyPoints,
+    //     entities: summaryData.entities,
+    //   },
+    // });
 
     // Update chapter status to completed
     await prisma.chapter.update({
